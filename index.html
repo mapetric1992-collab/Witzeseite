@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>😂 Witz-Generator</title>
+<style>
+  :root{--bg1:#1e3c72;--bg2:#2a5298;--accent:#4cff80}
+  *{box-sizing:border-box}
+  body{
+    margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,var(--bg1),var(--bg2));color:#fff;padding:16px
+  }
+  .box{max-width:720px;width:100%;background:rgba(0,0,0,.35);border-radius:16px;
+       padding:18px;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  h1{margin:0 0 14px;font-size:24px;text-align:center;text-shadow:0 2px 6px rgba(0,0,0,.7)}
+  #joke{font-size:20px;line-height:1.45;min-height:110px;margin:10px 0 14px;animation:fade .35s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  button{
+    padding:10px 14px;border:none;border-radius:12px;font-weight:700;font-size:14px;
+    background:var(--accent);color:#000;cursor:pointer;transition:transform .12s
+  }
+  button:active{transform:translateY(1px) scale(.99)}
+  .btn-ghost{background:transparent;color:#fff;border:2px solid rgba(255,255,255,.75)}
+  .grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:14px}
+  @media(min-width:640px){.grid{grid-template-columns:1fr 1fr}}
+  .panel{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px}
+  .panel h2{margin:0 0 8px;font-size:16px;opacity:.9}
+  ul{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}
+  li{display:flex;gap:8px;align-items:flex-start;padding:8px;border-bottom:1px dashed rgba(255,255,255,.15)}
+  li:last-child{border-bottom:none}
+  .li-text{flex:1}
+  .small{font-size:12px;opacity:.85;text-align:center;margin-top:8px}
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>😂 Witz-Generator</h1>
+
+    <div id="joke">Klick auf „Neuer Witz“.</div>
+
+    <div class="row">
+      <button id="btnNew">Neuer Witz</button>
+      <button id="btnSave" class="btn-ghost">Speichern</button>
+      <button id="btnCopy" class="btn-ghost">Kopieren</button>
+      <button id="btnFavRandom" class="btn-ghost">Zufall aus Favoriten</button>
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>Favoriten</h2>
+        <ul id="favList"></ul>
+        <div class="row" style="justify-content:flex-end;margin-top:8px">
+          <button id="btnClear" class="btn-ghost">Alle löschen</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Hinweise</h2>
+        <div class="small">
+          Favoriten werden **nur lokal** im Browser gespeichert (localStorage).<br>
+          Kein Account, keine Kosten.
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const jokeBox = document.getElementById('joke');
+const favList = document.getElementById('favList');
+
+document.getElementById('btnNew').addEventListener('click', getJoke);
+document.getElementById('btnSave').addEventListener('click', saveCurrent);
+document.getElementById('btnCopy').addEventListener('click', copyCurrent);
+document.getElementById('btnFavRandom').addEventListener('click', showRandomFavorite);
+document.getElementById('btnClear').addEventListener('click', clearFavorites);
+
+init();
+
+async function getJoke(){
+  setText('Lade Witz …');
+  try{
+    // Versuch: deutsch
+    let r = await fetch('https://v2.jokeapi.dev/joke/Any?lang=de&type=single');
+    let d = await r.json();
+    if(d && d.joke){ setText(d.joke); return; }
+    // Fallback: englisch
+    r = await fetch('https://v2.jokeapi.dev/joke/Any?type=single');
+    d = await r.json();
+    if(d && d.joke){ setText(d.joke); }
+    else { setText('Leider kein Witz gefunden.'); }
+  }catch(e){
+    setText('Fehler beim Laden des Witzes.');
+  }
+}
+
+function setText(t){
+  jokeBox.textContent = t;
+  jokeBox.style.animation = 'none';
+  void jokeBox.offsetWidth; // reset animation
+  jokeBox.style.animation = 'fade .35s ease';
+}
+
+function getCurrent(){
+  return (jokeBox.textContent || '').trim();
+}
+
+function saveCurrent(){
+  const txt = getCurrent();
+  if(!txt || txt.startsWith('Lade Witz') || txt === 'Klick auf „Neuer Witz“.') return;
+  const arr = loadFavs();
+  if(arr.includes(txt)) return; // keine Duplikate
+  arr.unshift(txt);
+  saveFavs(arr);
+  renderFavs(arr);
+}
+
+async function copyCurrent(){
+  const txt = getCurrent();
+  if(!txt) return;
+  try{
+    await navigator.clipboard.writeText(txt);
+    flash('Kopiert.');
+  }catch{
+    flash('Konnte nicht kopieren.');
+  }
+}
+
+function showRandomFavorite(){
+  const arr = loadFavs();
+  if(arr.length === 0){ flash('Keine Favoriten.'); return; }
+  const pick = arr[Math.floor(Math.random()*arr.length)];
+  setText(pick);
+}
+
+function clearFavorites(){
+  if(!confirm('Alle Favoriten löschen?')) return;
+  saveFavs([]);
+  renderFavs([]);
+}
+
+function deleteFav(idx){
+  const arr = loadFavs();
+  arr.splice(idx,1);
+  saveFavs(arr);
+  renderFavs(arr);
+}
+
+function renderFavs(arr){
+  favList.innerHTML = '';
+  arr.forEach((t, i)=>{
+    const li = document.createElement('li');
+    const span = document.createElement('div');
+    span.className = 'li-text';
+    span.textContent = t;
+    const del = document.createElement('button');
+    del.className = 'btn-ghost';
+    del.textContent = 'Löschen';
+    del.onclick = ()=>deleteFav(i);
+    const cp = document.createElement('button');
+    cp.className = 'btn-ghost';
+    cp.textContent = 'Kopieren';
+    cp.onclick = async ()=>{
+      try{ await navigator.clipboard.writeText(t); flash('Kopiert.'); }
+      catch{ flash('Konnte nicht kopieren.'); }
+    };
+    li.append(span, cp, del);
+    favList.appendChild(li);
+  });
+}
+
+function flash(msg){
+  const old = jokeBox.textContent;
+  jokeBox.textContent = msg;
+  setTimeout(()=>{ jokeBox.textContent = old; }, 900);
+}
+
+function loadFavs(){
+  try{ return JSON.parse(localStorage.getItem('jokes')||'[]'); }
+  catch{ return []; }
+}
+function saveFavs(arr){
+  localStorage.setItem('jokes', JSON.stringify(arr));
+}
+function init(){
+  renderFavs(loadFavs());
+}
+</script>
+</body>
+</html>
